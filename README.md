@@ -28,8 +28,8 @@ The following provided keybindings use a 15 minute increment.
 
 A package is provided for those using Sublime Text:
 ```
-cp timestamp.py ~/.config/sublime-text-3/Packages/User/
-Preferences > Key Bindings > Add "{ "keys": ["f1"], "command": "timestamp" },"
+cp run_cmd.py ~/.config/sublime-text-3/Packages/User/
+Preferences > Key Bindings > Add '{ "keys": ["f2"], "command": "run_cmd", "args": {"cmd": "timesheet -s"} },'
 ```
 And for those using vim, add this to your .vimrc:
 ```
