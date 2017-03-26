@@ -1,11 +1,10 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python3
 # Scan a timesheet file for datetime entries of the type: [2017-03-13 11:45AM]
 # Calculate the time between entries and use the first sentence of the first line as an identifier.
 # Coalesce and total the hours from all identifiers which do not start with '-' and print them at the end.
 
 # TODO: "Project" support based on ":" character?
 # TODO: JIRA integration?
-from __future__ import print_function
 import os
 import sys
 import time
@@ -37,9 +36,9 @@ def report(timesheet_file):
 				print("\t%.2fh" % hours)
 				ids[id] += hours
 			last_timestamp = timestamp
-			print(line),
+			print(line,end='')
 		except ValueError:
-			print(line),
+			print(line,end='')
 			if id_line:
 				id = line.strip().split(".")[0]
 				id_line = False
@@ -49,7 +48,7 @@ def report(timesheet_file):
 	print("\n")
 
 	total_hours = 0
-	for id, hours in sorted(ids.iteritems(), key=lambda (k,v): (v,k)):
+	for id, hours in sorted(ids.items(), key=lambda kv: (-kv[1], kv[0])):
 		if id[:1] is not '-':
 			total_hours += hours
 			print("%.2fh: %s" % (hours, id))
