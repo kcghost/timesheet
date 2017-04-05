@@ -97,7 +97,7 @@ if args.d is not None:
 		if os.path.isfile(file_path):
 			print(file_date.strftime('Report for %a %Y-%m-%d:'))
 			report(open(file_path))
-			print("\n")
+			print('-' * 80)
 		file_date = file_date + timedelta(days=1)
 		args.d -= 1
 elif args.r is not None:
