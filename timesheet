@@ -60,6 +60,8 @@ today_timesheet_path = time.strftime(time_dir + "/%Y-%m-%d")
 
 editor=os.getenv('TIMESHEET_EDITOR', 'vim')
 
+interval=int(os.getenv('TIMESHEET_INTERVAL', '900'))
+
 import argparse
 parser = argparse.ArgumentParser(
 	description='Generate reports for timesheet files. With no arguments, create new timesheet in $TIMESHEET_TIMEDIR for the current date with $TIMESHEET_EDITOR.',
@@ -80,7 +82,7 @@ parser.add_argument(
 	const=10)
 parser.add_argument(
 	"-s",
-	help="Generate a current timestamp rounded to the nearest 15 minutes.",
+	help="Generate a current timestamp rounded to the nearest $TIMESHEET_INTERVAL. Defaults to 900 seconds (15 minutes).",
 	action="store_true")
 args = parser.parse_args()
 
@@ -103,6 +105,6 @@ if args.d is not None:
 elif args.r is not None:
 	report(args.r)
 elif args.s:
-	print("[%s]" % (roundTime(roundTo=60*15).strftime("%Y-%m-%d %I:%M%p")),end = '')
+	print("[%s]" % (roundTime(roundTo=interval).strftime("%Y-%m-%d %I:%M%p")),end = '')
 else:
 	os.system(editor + " " + today_timesheet_path)
