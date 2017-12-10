@@ -21,39 +21,75 @@ def roundTime(dt=None, roundTo=60):
 	rounding = (seconds+roundTo/2) // roundTo * roundTo
 	return dt + timedelta(0,rounding-seconds,-dt.microsecond)
 
-def report(timesheet_file):
+def analyze(day_totals,timesheet_file, print_sheet=True, print_hours=True, entry_task=None, print_id_entry=True, print_id_hours=True):
 	last_timestamp = None
-	id_line = False
-	id = ""
-	ids = {}
+	task_line = False
+	task = ""
+	entry = ""
 	for line in timesheet_file:
 		try:
 			# *Not* ISO 8601 for the time portion, but I hate 24h time for readability
 			timestamp = datetime.strptime(line, '[%Y-%m-%d %I:%M%p]\n')
-			id_line = True
+			task_line = True
+			
+			if task == entry_task:
+				if print_id_entry:
+					print(entry,end='')
+			entry = line
+			
 			if last_timestamp is not None:
 				hours = (timestamp - last_timestamp).total_seconds()/60/60
-				print("\t%.2fh" % hours)
-				ids[id] += hours
+				if print_hours:
+					print("\t%.2fh" % hours)
+				day_totals[task] += hours
 			last_timestamp = timestamp
-			print(line,end='')
+			if print_sheet:
+				print(line,end='')
 		except ValueError:
-			print(line,end='')
-			if id_line:
-				id = line.strip().split(".")[0]
-				id_line = False
-				if not id in ids:
-					ids[id] = 0.0
+			entry += line
+			if print_sheet:
+				print(line,end='')
+			if task_line:
+				task = line.strip().split(".")[0]
+				task_line = False
+				if not task in day_totals:
+					day_totals[task] = 0.0
 
-	print("\n")
-
+def report_total(totals):
 	total_hours = 0
-	for id, hours in sorted(ids.items(), key=lambda kv: (-kv[1], kv[0])):
-		if id[:1] is not '-':
+	hours_print_width = 0
+	first_entry = True
+	for task, hours in sorted(totals.items(), key=lambda kv: (-kv[1], kv[0])):
+		if task[:1] is not '-':
+			# First valid entry, set the max print width (sorted, so it should be the longest)
+			if first_entry:
+				hours_print_width = len("%.2f" % hours)
+				first_entry = False
 			total_hours += hours
-			print("%.2fh: %s" % (hours, id))
+			print("%*.2fh: %s" % (hours_print_width, hours, task))
 
 	print("\n%.2fh: Total" % total_hours)
+
+def report(day_totals,timesheet_file):
+	analyze(day_totals,timesheet_file)
+	print("\n")
+	report_total(day_totals)
+
+def session_report(file_path, dates):
+	session_totals = {}
+	for file_date in dates:
+		file_path = os.path.dirname(file_path) + "/" + file_date.strftime('%Y-%m-%d')
+		if os.path.isfile(file_path):
+			print(file_date.strftime('Report for %a %Y-%m-%d:'))
+			day_totals = {}
+			report(day_totals, open(file_path))
+			for task, hours in day_totals.items():
+				if task in session_totals:
+					session_totals[task] += hours;
+				else:
+					session_totals[task] = hours;
+			print('-' * 80)
+	report_total(session_totals)
 
 time_dir=os.path.expanduser(os.getenv('TIMESHEET_TIMEDIR', os.getcwd()))
 today_timesheet_path = time.strftime(time_dir + "/%Y-%m-%d")
@@ -81,6 +117,10 @@ parser.add_argument(
 	type=int,
 	const=10)
 parser.add_argument(
+	"-a",
+	help="Generate reports for all time.",
+	action="store_true")
+parser.add_argument(
 	"-s",
 	help="Generate a current timestamp rounded to the nearest $TIMESHEET_INTERVAL. Defaults to 900 seconds (15 minutes).",
 	action="store_true")
@@ -91,19 +131,27 @@ if args.r is not None:
 else:
 	file_path = today_timesheet_path
 
-if args.d is not None:
+if args.a:
+	dates = list()
+	for filename in sorted(os.listdir(os.path.dirname(file_path))):
+		try:
+			file_date = datetime.strptime(filename, '%Y-%m-%d')
+			dates.append(file_date)
+		except ValueError:
+			pass
+	session_report(file_path, dates)
+elif args.d is not None:
+	dates = list()
 	file_date = datetime.strptime(os.path.basename(file_path), '%Y-%m-%d')
 	file_date = file_date - timedelta(days=args.d-1)
 	while args.d > 0:
-		file_path = os.path.dirname(file_path) + "/" + file_date.strftime('%Y-%m-%d')
-		if os.path.isfile(file_path):
-			print(file_date.strftime('Report for %a %Y-%m-%d:'))
-			report(open(file_path))
-			print('-' * 80)
+		dates.append(file_date)
 		file_date = file_date + timedelta(days=1)
 		args.d -= 1
+	session_report(file_path, dates)
 elif args.r is not None:
-	report(args.r)
+	day_totals = {}
+	report(day_totals, args.r)
 elif args.s:
 	print("[%s]" % (roundTime(roundTo=interval).strftime("%Y-%m-%d %I:%M%p")),end = '')
 else:
