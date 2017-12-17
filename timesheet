@@ -3,7 +3,6 @@
 # Calculate the time between entries and use the first sentence of the first line as an identifier.
 # Coalesce and total the hours from all identifiers which do not start with '-' and print them at the end.
 
-# TODO: "Project" support based on ":" character?
 # TODO: JIRA integration?
 import os
 import sys
@@ -21,39 +20,93 @@ def roundTime(dt=None, roundTo=60):
 	rounding = (seconds+roundTo/2) // roundTo * roundTo
 	return dt + timedelta(0,rounding-seconds,-dt.microsecond)
 
-def analyze(day_totals,timesheet_file, print_sheet=True, print_hours=True, entry_task=None, print_id_entry=True, print_id_hours=True):
+def analyze(timesheet_file):
 	last_timestamp = None
 	task_line = False
-	task = ""
-	entry = ""
+	entries = {}
+	notes = str()
+	
 	for line in timesheet_file:
 		try:
 			# *Not* ISO 8601 for the time portion, but I hate 24h time for readability
 			timestamp = datetime.strptime(line, '[%Y-%m-%d %I:%M%p]\n')
 			task_line = True
 			
-			if task == entry_task:
-				if print_id_entry:
-					print(entry,end='')
-			entry = line
-			
+			# Finish last entry
 			if last_timestamp is not None:
-				hours = (timestamp - last_timestamp).total_seconds()/60/60
-				if print_hours:
-					print("\t%.2fh" % hours)
-				day_totals[task] += hours
+				task_id = name
+				# Iterate projects recursively
+				project_entries = entries
+				for token in task_id.split(':')[:-1]:
+					# Match task id case insenstively
+					if token.lower() not in (token.lower() for token in project_entries):
+						project_entries[token] = {}
+					project_entries = project_entries[token]
+				
+				entry = {}
+				entry['name'] = name
+				entry['notes'] = notes
+				entry['start_time'] = last_timestamp
+				entry['end_time'] = timestamp
+				
+				# Use first encounter of task as identifier, but match rest case insensitively
+				found_existing_entry = False
+				task_id = task_id.split(':')[-1].strip()
+				for task_id_entry in project_entries:
+					if task_id.lower() == task_id_entry.lower():
+						project_entries[task_id_entry].append(entry)
+						found_existing_entry = True
+				if not found_existing_entry:
+					project_entries[task_id] = []
+					project_entries[task_id].append(entry)
+			
 			last_timestamp = timestamp
-			if print_sheet:
-				print(line,end='')
 		except ValueError:
-			entry += line
-			if print_sheet:
-				print(line,end='')
+			notes += line.strip() + '\n'
 			if task_line:
-				task = line.strip().split(".")[0]
+				name = line.strip().split(".")[0]
+				# Use rest of line beside the task name for entry notes
+				notes = ("".join(line.strip().split(".")[1:])).strip()
+				if notes:
+					notes += '\n'
 				task_line = False
-				if not task in day_totals:
-					day_totals[task] = 0.0
+	return entries
+
+def print_entries(entries, tabs, sort_entries, quiet):
+	total_seconds = 0
+	hours_print_width = 0
+	first_entry = True
+	
+	entries_keys = entries
+	if sort_entries and type(entries) is dict:
+		entries_keys = list(entries.keys())
+		entries_keys.sort(key=lambda entry: print_entries(entries[entry], 0, False, True), reverse=True)
+	
+	for entry in entries_keys:
+		if 'start_time' not in entry:
+			if entry.startswith('-'):
+				continue
+			
+			project_seconds = print_entries(entries[entry], tabs + 1, sort_entries, True)
+			
+			# First valid entry, set the max print width (sorted, so it should be the longest)
+			if first_entry:
+				hours_print_width = len("%.2f" % (project_seconds/60/60))
+				first_entry = False
+			
+			if not quiet:
+				print('\t' * tabs + "%*.2fh: " % (hours_print_width, project_seconds/60/60) + entry)
+			
+			print_entries(entries[entry], tabs + 1, sort_entries, quiet)
+			total_seconds += project_seconds
+		else:
+			total_seconds += (entry['end_time']-entry['start_time']).total_seconds()
+			for line in entry['notes'].split('\n'):
+				if line:
+					if not quiet:
+						print('\t' * tabs + line)
+			
+	return total_seconds
 
 def report_total(totals):
 	total_hours = 0
@@ -70,26 +123,49 @@ def report_total(totals):
 
 	print("\n%.2fh: Total" % total_hours)
 
-def report(day_totals,timesheet_file):
-	analyze(day_totals,timesheet_file)
-	print("\n")
-	report_total(day_totals)
+def report(timesheet_file):
+	entries = analyze(timesheet_file)
+	total_seconds = print_entries(entries, 0, True, False)
+	print("\n%.2fh: Total" % (total_seconds/60/60))
+	return entries
+
+def combine_entries(total_entries, entries):
+	if type(entries) is dict and type(total_entries) is dict:
+		for entry in entries:
+			if entry.lower() not in (t_entry.lower() for t_entry in total_entries):
+				total_entries[entry] = entries[entry]
+			else:
+				for t_entry in total_entries: 
+					if t_entry.lower() == entry.lower():
+						if type(total_entries[t_entry]) != type(entries[entry]):
+							if type(total_entries[t_entry]) is list:
+								# New entry treats previous task name as a project
+								entries[entry][t_entry] = total_entries[t_entry]
+								total_entries[t_entry] = entries[entry]
+							else:
+								# New entry treats previous project as a task name
+								total_entries[t_entry][t_entry] = entries[entry]
+						else:
+							combine_entries(total_entries[t_entry], entries[entry])
+	elif type(entries) is list and type(total_entries) is list:
+		total_entries += entries
 
 def session_report(file_path, dates):
-	session_totals = {}
+	total_entries = {}
 	for file_date in dates:
 		file_path = os.path.dirname(file_path) + "/" + file_date.strftime('%Y-%m-%d')
 		if os.path.isfile(file_path):
 			print(file_date.strftime('Report for %a %Y-%m-%d:'))
-			day_totals = {}
-			report(day_totals, open(file_path))
-			for task, hours in day_totals.items():
-				if task in session_totals:
-					session_totals[task] += hours;
-				else:
-					session_totals[task] = hours;
+			entries = report(open(file_path))
 			print('-' * 80)
-	report_total(session_totals)
+			if not total_entries:
+				total_entries = entries
+			else:
+				combine_entries(total_entries, entries)
+	
+	print(file_date.strftime('Report for full session:'))
+	total_seconds = print_entries(total_entries, 0, True, False)
+	print("\n%.2fh: Total" % (total_seconds/60/60))
 
 time_dir=os.path.expanduser(os.getenv('TIMESHEET_TIMEDIR', os.getcwd()))
 today_timesheet_path = time.strftime(time_dir + "/%Y-%m-%d")
@@ -151,7 +227,7 @@ elif args.d is not None:
 	session_report(file_path, dates)
 elif args.r is not None:
 	day_totals = {}
-	report(day_totals, args.r)
+	report(args.r)
 elif args.s:
 	print("[%s]" % (roundTime(roundTo=interval).strftime("%Y-%m-%d %I:%M%p")),end = '')
 else:
