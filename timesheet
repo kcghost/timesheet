@@ -100,11 +100,18 @@ def print_entries(entries, tabs, sort_entries, quiet):
 			print_entries(entries[entry], tabs + 1, sort_entries, quiet)
 			total_seconds += project_seconds
 		else:
-			total_seconds += (entry['end_time']-entry['start_time']).total_seconds()
-			for line in entry['notes'].split('\n'):
-				if line:
-					if not quiet:
-						print('\t' * tabs + line)
+			entry_seconds = (entry['end_time']-entry['start_time']).total_seconds()
+			total_seconds += entry_seconds
+			if not quiet and args.v > 0:
+				if args.v > 1:
+					print('\t' * tabs + "%.2fh: " % (entry_seconds/60/60) + entry['start_time'].strftime("[%Y-%m-%d %I:%M%p]") + "-" + entry['end_time'].strftime("[%Y-%m-%d %I:%M%p]"))
+
+				for line in entry['notes'].split('\n'):
+					if line:
+						if args.v > 1:
+							print('\t' * (tabs + 1) + line)
+						else:
+							print('\t' * tabs + line)
 			
 	return total_seconds
 
@@ -124,6 +131,10 @@ def report_total(totals):
 	print("\n%.2fh: Total" % total_hours)
 
 def report(timesheet_file):
+	if args.v > 2:
+		print(timesheet_file.read())
+		timesheet_file.seek(0)
+		print("")
 	entries = analyze(timesheet_file)
 	total_seconds = print_entries(entries, 0, True, False)
 	print("\n%.2fh: Total" % (total_seconds/60/60))
@@ -196,6 +207,11 @@ parser.add_argument(
 	"-a",
 	help="Generate reports for all time.",
 	action="store_true")
+parser.add_argument(
+	"-v",
+	help="Set the verbosity level (Accepts multiple levels). Displays notes, then time entries, then whole files.",
+	default=0,
+	action="count")
 parser.add_argument(
 	"-s",
 	help="Generate a current timestamp rounded to the nearest $TIMESHEET_INTERVAL. Defaults to 900 seconds (15 minutes).",
